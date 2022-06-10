@@ -23,18 +23,36 @@ labelsT = transpose(labels);
 Z = 50;
 
 % Liczba eliminowanych cech w każdej pętli algorytmu RFE
-X = 50;
+X = 2;
 
 [data_RFE, names_RFE] = RFE(dataT, names, labelsT, P, Z, X);
 
 [data_f, names_f] = fisher_score(originaldata, dataT, names, labelsT, Z);
+[data_fisher, names_fisher] = fscore(transpose(dataT), transpose(labelsT), Z, originaldata);
 
 % Walidacja i porównanie metod
-[error_RFE, AUC_RFE] = svm_classifier(data_RFE, labels, N);
-[error_fisher, AUC_fisher] = svm_classifier(data_f, labels, N);
+[error_RFE, AUC_RFE, X1, Y1] = svm_classifier(data_RFE, labels, N);
+[error_fisher, AUC_fisher, X2, Y2] = svm_classifier(data_f, labels, N);
 
 fprintf('Błąd klasyfikacji RFE: %.2f\n', error_RFE)
+fprintf('AUC dla RFE: %.2f\n', AUC_RFE)
 fprintf('Błąd klasyfikacji f-score: %.2f\n', error_fisher)
+fprintf('AUC dla f-score: %.2f\n', AUC_fisher)
+
+% Krzywe ROC
+figure(1)
+p1 = plot(X1,Y1);
+p1.LineWidth = 2;
+title(['Krzywa ROC dla RFE (Z=', num2str(Z), ', X=', num2str(X), ')'])
+xlabel('Swoistość')
+ylabel('Czułość')
+
+figure(2)
+p2 = plot(X2,Y2);
+p2.LineWidth = 2;
+title(['Krzywa ROC dla f-score (Z=', num2str(Z), ')'])
+xlabel('Swoistość')
+ylabel('Czułość')
 
 
 % ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Funkcje ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -98,12 +116,46 @@ f_score = table2array(expression_matrix(:, 2:end));
 f_names = expression_matrix(:, 1);
 end
 
+function [f_score, f_names]=fscore(data,labels,selected_count, originaldata)
+%f_score, f_names
+classes=unique(labels);
+
+m=mean(data,2);
+
+b=zeros(size(m));
+w=zeros(size(m));
+
+for i=1:length(classes) 
+	idx=find(labels==classes(i));
+    ni=length(idx);
+    
+    mi = mean(data(:,idx),2);
+	vi = var(data(:,idx),[],2) * ((ni-1)/ni);
+    
+    b = b + ni * ((mi-m).^2);
+    w = w + ni * vi;
+end
+
+df1 = length(classes) - 1;
+df2 = size(data,2) - length(classes);
+f=(b/df1) ./ (w/df2);
+
+[scores,fidx]=sort(f,'descend');
+
+%selected=fidx(1:selected_count);
+f_score = scores(1:selected_count);
+expression_matrix = originaldata(2:end, :);
+f_names = expression_matrix(fidx(1:selected_count), 1);
+
+end
+
 
 % Błędy klasyfikatorów
-function [error, AUC] = svm_classifier(data, labels, N)
+function [error, AUC, X, Y] = svm_classifier(data, labels, N)
 
 cv = cvpartition(N,'KFold',3);
 e = zeros(1,3);
+auc = zeros(1,3);
 
 for j = 1:3
     
@@ -117,14 +169,16 @@ for j = 1:3
     Mdl = fitcsvm(dataTrain, classTrain, 'KernelFunction', 'linear');
     
     % Test klasyfikatora SVM
-    test_labels = predict(Mdl, dataTest);
+    [test_labels, scores] = predict(Mdl, dataTest);
     
     % Obliczenie błędu klasyfikacji dla danego podzbioru
     e(j) = sum(logical(transpose(test_labels)-labels(idx)))/cv.TestSize(j);
-    [X, Y, T, AUC] = perfcurve(labels(idx), transpose(test_labels), 2);
+    [X, Y, ~, auc(j)] = perfcurve(labels(idx), scores(:,2), 2);
+
 end
 
 % Ostateczny błąd klasyfikaji w procentach
 error = mean(e)*100;
+AUC = mean(auc);
 end
 
