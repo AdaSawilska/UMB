@@ -20,40 +20,51 @@ dataT = transpose(data);
 labelsT = transpose(labels);
 
 % Końcowa liczba najważniejszych cech
-Z = 50;
+Z = 100;
 
 % Liczba eliminowanych cech w każdej pętli algorytmu RFE
-X = 2;
+X = 20;
 
-[data_RFE, names_RFE] = RFE(dataT, names, labelsT, P, Z, X);
+l = 100;
+for loop = 1:l
+    loop
+    [data_RFE, names_RFE] = RFE(dataT, names, labelsT, P, Z, X);
+    data_fisher = fscore(transpose(dataT), transpose(labelsT), Z, originaldata);
+    
+    % Walidacja i porównanie metod
+    [error_RFE, AUC_RFE, X1, Y1] = svm_classifier(data_RFE, labels, N);
+    [error_fisher, AUC_fisher, X2, Y2] = svm_classifier(data_fisher, labels, N);
 
-[data_f, names_f] = fisher_score(originaldata, dataT, names, labelsT, Z);
-[data_fisher, names_fisher] = fscore(transpose(dataT), transpose(labelsT), Z, originaldata);
+    er1(loop)=error_RFE;
+    er2(loop)=AUC_RFE;
+    er3(loop)=error_fisher;
+    er4(loop)=AUC_fisher;
+end
 
-% Walidacja i porównanie metod
-[error_RFE, AUC_RFE, X1, Y1] = svm_classifier(data_RFE, labels, N);
-[error_fisher, AUC_fisher, X2, Y2] = svm_classifier(data_f, labels, N);
-
-fprintf('Błąd klasyfikacji RFE: %.2f\n', error_RFE)
-fprintf('AUC dla RFE: %.2f\n', AUC_RFE)
-fprintf('Błąd klasyfikacji f-score: %.2f\n', error_fisher)
-fprintf('AUC dla f-score: %.2f\n', AUC_fisher)
-
-% Krzywe ROC
-figure(1)
-p1 = plot(X1,Y1);
-p1.LineWidth = 2;
-title(['Krzywa ROC dla RFE (Z=', num2str(Z), ', X=', num2str(X), ')'])
-xlabel('Swoistość')
-ylabel('Czułość')
-
-figure(2)
-p2 = plot(X2,Y2);
-p2.LineWidth = 2;
-title(['Krzywa ROC dla f-score (Z=', num2str(Z), ')'])
-xlabel('Swoistość')
-ylabel('Czułość')
-
+sum_error_RFE = sum(er1(:))/l;
+sum_AUC_RFE = sum(er2(:))/l;
+sum_error_fisher = sum(er3(:))/l;
+sum_AUC_fisher = sum(er4(:))/l;
+    
+fprintf('Błąd klasyfikacji RFE: %.2f\n', sum_error_RFE)
+fprintf('AUC dla RFE: %.2f\n', sum_AUC_RFE)
+fprintf('Błąd klasyfikacji f-score: %.2f\n', sum_error_fisher)
+fprintf('AUC dla f-score: %.2f\n', sum_AUC_fisher)
+    
+    % Krzywe ROC
+%     figure(1)
+%     p1 = plot(X1,Y1);
+%     p1.LineWidth = 2;
+%     title(['Krzywa ROC dla RFE (Z=', num2str(Z), ', X=', num2str(X), ')'])
+%     xlabel('Swoistość')
+%     ylabel('Czułość')
+%     
+%     figure(2)
+%     p2 = plot(X2,Y2);
+%     p2.LineWidth = 2;
+%     title(['Krzywa ROC dla f-score (Z=', num2str(Z), ')'])
+%     xlabel('Swoistość')
+%     ylabel('Czułość')
 
 % ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Funkcje ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -97,26 +108,7 @@ data_RFE = transpose(dataT);
 end
 
 
-% Fisher score
-function [f_score, f_names] = fisher_score(originaldata, dataT, names, labelsT, Z)
-    
-% Wyliczenie f-score dla całego zbioru
-[index,scores] = fsrftest(dataT, labelsT);
-
-% Posortowanie cech ze względu na ich kryterium ważności
-fisher_peptide_imp = sortrows([index; scores].', 1, "ascend");
-fisher_peptide_imp = sortrows([names, array2table(fisher_peptide_imp)], 3, "descend");
-
-% Wybranie Z cech o największych wartościach f-score
-fisher_peptide_index = fisher_peptide_imp(1:Z, 2);
-
-expression_matrix = originaldata(2:end, :);
-expression_matrix = expression_matrix(table2array(fisher_peptide_index),:);
-f_score = table2array(expression_matrix(:, 2:end));
-f_names = expression_matrix(:, 1);
-end
-
-function [f_score, f_names]=fscore(data,labels,selected_count, originaldata)
+function f_score=fscore(data,labels,selected_count, originaldata)
 %f_score, f_names
 classes=unique(labels);
 
@@ -141,11 +133,8 @@ df2 = size(data,2) - length(classes);
 f=(b/df1) ./ (w/df2);
 
 [scores,fidx]=sort(f,'descend');
-
-%selected=fidx(1:selected_count);
-f_score = scores(1:selected_count);
 expression_matrix = originaldata(2:end, :);
-f_names = expression_matrix(fidx(1:selected_count), 1);
+f_score = table2array(expression_matrix(fidx(1:selected_count), 2:end));
 
 end
 
